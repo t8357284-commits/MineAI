@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  user
+}
+
+enum Plan {
+  free
+  pro
+  business
+}
+
+enum ProjectStatus {
+  active
+  archived
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  plan         Plan     @default(free)
+  planStartedAt DateTime?
+  planExpiresAt DateTime?
+  subscriptionStatus String @default("inactive")
+  subscriptionNote String @default("")
+  role         Role     @default(user)
+  isActive     Boolean  @default(true)
+  emailVerified Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects Project[]
+  scripts  Script[]
+  usage    Usage[]
+  payments Payment[]
+  approvedPayments Payment[] @relation("ApprovedPayments")
+  mediaAssets MediaAsset[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  auditLogs AuditLog[] @relation("ActorAuditLogs")
+
+  @@index([email])
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  userId      String
+  title       String
+  platform    String        @default("tiktok")
+  description String        @default("")
+  status      ProjectStatus @default(active)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scripts Script[]
+
+  @@index([userId, updatedAt])
+}
+
+model Script {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String?
+  title     String
+  platform  String
+  content   Json
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([projectId])
+}
+
+model Usage {
+  id         String   @id @default(uuid())
+  userId     String
+  day        String
+  aiRequests Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([day])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  plan              Plan
+  amount            Decimal       @db.Decimal(12, 2)
+  currency          String        @default("YER")
+  paymentMethod     String
+  transactionNumber String        @default("")
+  receiptImage      String
+  receiptProvider   String        @default("local")
+  receiptPublicId   String        @default("")
+  status            PaymentStatus @default(PENDING)
+  note              String        @default("")
+  adminNote         String        @default("")
+  requestedDays     Int           @default(30)
+  createdAt         DateTime      @default(now())
+  approvedAt        DateTime?
+  approvedById      String?
+  rejectedAt        DateTime?
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("ApprovedPayments", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+
+model MediaAsset {
+  id           String   @id @default(uuid())
+  userId       String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  provider     String   @default("local")
+  publicId     String   @default("")
+  purpose      String   @default("general")
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([purpose])
+}
+
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String   @default("")
+  metadata   Json?
+  ip         String   @default("")
+  userAgent  String   @default("")
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("ActorAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+}
