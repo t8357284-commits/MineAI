@@ -130,29 +130,29 @@ router.post('/generate-script', [
     const userPrompt = `المنصة: ${PLATFORM_NAMES[platform]}
 القالب: ${template}
 الموضوع: ${topic}
-الجمهور: ${audience}
+الجمهور المستهدف: ${audience}
 الحساب: ${handle || 'غير محدد'}
 اللغة: ${langNote}
  
-أنشئ سكريبت فيديو احترافي كامل.
+أنشئ سكريبت فيديو احترافي قابل للانتشار.
  
+أرجع JSON فقط بهذا الشكل:
 {
-  "title": "عنوان جذاب",
-  "hook": "الـ Hook الأول (جملة واحدة صادمة)",
+  "title": "عنوان قوي جداً",
+  "hook": "افتتاحية صادمة لا تتجاوز 15 كلمة",
   "scenes": [
-    {"id":1,"duration":3,"text":"نص المشهد","direction":"توجيه بصري"},
-    {"id":2,"duration":4,"text":"نص المشهد","direction":"توجيه بصري"},
-    {"id":3,"duration":3,"text":"نص المشهد","direction":"توجيه بصري"},
-    {"id":4,"duration":3,"text":"CTA قوي","direction":"توجيه بصري"}
+    {"id":1,"duration":3,"text":"المشهد الأول","direction":"تعليمات بصرية"}
   ],
-  "hashtags": ["#1","#2","#3","#4","#5","#6"],
-  "caption": "كابشن المنشور الكامل",
-  "best_time": "أفضل وقت نشر",
-  "predicted_reach": "الوصول المتوقع",
-  "engagement_score": رقم,
-  "algo_tip": "نصيحة الخوارزمية",
-  "audio_suggestion": "اقتراح الموسيقى"
-}`;
+  "hashtags": [],
+  "caption": "",
+  "best_time": "",
+  "predicted_reach": "",
+  "engagement_score": 0,
+  "algo_tip": "",
+  "audio_suggestion": ""
+}
+ 
+اجعل السكريبت عملياً وقابلاً للتصوير فوراً.`;
  
     const data = await callAI(
       [{ role: 'user', content: userPrompt }],
