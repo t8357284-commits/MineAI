@@ -1,24 +1,25 @@
+
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const NodeCache = require('node-cache');
 const logger = require('../utils/logger');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
  
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // 5-min cache
  
-let genAI = null;
+let groq = null;
  
-function getGemini() {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured on server');
+function getGroq() {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY not configured on server');
   }
  
-  if (!genAI) {
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  if (!groq) {
+    groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
  
-  return genAI;
+  return groq;
 }
  
 // ─── Validation Schemas ───────────────────────────────────
@@ -32,20 +33,36 @@ const messageValidation = [
  
 // ─── Helper ───────────────────────────────────────────────
 async function callAI(messages, systemPrompt, maxTokens = 1000) {
-  const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
- 
-  const prompt = [
-    systemPrompt || '',
-    ...messages.map(m => m.content)
-  ].join('\n\n');
- 
-  const result = await model.generateContent(prompt);
+  const completion = await getGroq().chat.completions.create({
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.7,
+    max_tokens: maxTokens,
+    messages: [
+      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+      ...messages,
+    ],
+  });
  
   return {
     content: [
-      { text: result.response.text() }
+      { text: completion.choices?.[0]?.message?.content || '' }
     ]
   };
+}
+ 
+// ─── Safe JSON parse helper ────────────────────────────────
+function safeParseJSON(raw) {
+  const cleaned = (raw || '')
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
+ 
+  try {
+    return { ok: true, data: JSON.parse(cleaned) };
+  } catch (err) {
+    logger.error(`AI JSON parse failed: ${err.message} — raw: ${cleaned.slice(0, 200)}`);
+    return { ok: false, error: err };
+  }
 }
  
 // ─── POST /api/ai/chat ─────────────────────────────────────
@@ -131,9 +148,12 @@ router.post('/generate-script', [
       1200
     );
  
-    const raw = data.content?.map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(raw);
-    res.json({ success: true, script: parsed });
+    const raw = data.content?.map(c => c.text || '').join('') || '';
+    const result = safeParseJSON(raw);
+    if (!result.ok) {
+      return res.status(502).json({ success: false, error: 'AI returned invalid response format' });
+    }
+    res.json({ success: true, script: result.data });
   } catch (err) {
     next(err);
   }
@@ -203,8 +223,12 @@ router.post('/hashtags', [
     if (cached) return res.json({ success: true, ...cached, cached: true });
  
     const data = await callAI([{ role: 'user', content: prompt }], null, 400);
-    const raw = data.content?.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(raw);
+    const raw = data.content?.map(c=>c.text||'').join('') || '';
+    const result = safeParseJSON(raw);
+    if (!result.ok) {
+      return res.status(502).json({ success: false, error: 'AI returned invalid response format' });
+    }
+    const parsed = result.data;
     cache.set(cacheKey, parsed, 600); // 10 min cache for hashtags
     res.json({ success: true, ...parsed });
   } catch (err) {
@@ -233,9 +257,12 @@ router.post('/hooks', [
 JSON فقط: {"hooks": ["hook1","hook2","hook3","hook4","hook5"]}`;
  
     const data = await callAI([{ role: 'user', content: prompt }], null, 400);
-    const raw = data.content?.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(raw);
-    res.json({ success: true, hooks: parsed.hooks });
+    const raw = data.content?.map(c=>c.text||'').join('') || '';
+    const result = safeParseJSON(raw);
+    if (!result.ok) {
+      return res.status(502).json({ success: false, error: 'AI returned invalid response format' });
+    }
+    res.json({ success: true, hooks: result.data.hooks });
   } catch (err) {
     next(err);
   }
@@ -261,9 +288,12 @@ router.post('/caption', [
 JSON فقط: {"caption": "نص الكابشن الكامل", "hashtags": ["#1","#2","#3","#4","#5"]}`;
  
     const data = await callAI([{ role: 'user', content: prompt }], null, 500);
-    const raw = data.content?.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(raw);
-    res.json({ success: true, caption: parsed.caption, hashtags: parsed.hashtags });
+    const raw = data.content?.map(c=>c.text||'').join('') || '';
+    const result = safeParseJSON(raw);
+    if (!result.ok) {
+      return res.status(502).json({ success: false, error: 'AI returned invalid response format' });
+    }
+    res.json({ success: true, caption: result.data.caption, hashtags: result.data.hashtags });
   } catch (err) {
     next(err);
   }
@@ -299,9 +329,12 @@ JSON فقط:
 }`;
  
     const data = await callAI([{ role: 'user', content: prompt }], null, 400);
-    const raw = data.content?.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(raw);
-    res.json({ success: true, result: parsed });
+    const raw = data.content?.map(c=>c.text||'').join('') || '';
+    const result = safeParseJSON(raw);
+    if (!result.ok) {
+      return res.status(502).json({ success: false, error: 'AI returned invalid response format' });
+    }
+    res.json({ success: true, result: result.data });
   } catch (err) {
     next(err);
   }
