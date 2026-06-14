@@ -31,11 +31,12 @@ const messageValidation = [
 ];
  
 // ─── Helper ───────────────────────────────────────────────
-async function callAI(messages, systemPrompt, maxTokens = 1000) {
+async function callAI(messages, systemPrompt, maxTokens = 1000, jsonMode = false) {
   const completion = await getGroq().chat.completions.create({
-    model: 'deepseek-r1-distill-llama-70b',
+    model: 'llama-3.3-70b-versatile',
     temperature: 0.7,
     max_tokens: maxTokens,
+    ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
     messages: [
       ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
       ...messages,
@@ -157,7 +158,8 @@ router.post('/generate-script', [
     const data = await callAI(
       [{ role: 'user', content: userPrompt }],
       systemPrompt,
-      1200
+      1200,
+      true
     );
  
     const raw = data.content?.map(c => c.text || '').join('') || '';
@@ -234,7 +236,7 @@ router.post('/hashtags', [
     const cached = cache.get(cacheKey);
     if (cached) return res.json({ success: true, ...cached, cached: true });
  
-    const data = await callAI([{ role: 'user', content: prompt }], null, 400);
+    const data = await callAI([{ role: 'user', content: prompt }], null, 400, true);
     const raw = data.content?.map(c=>c.text||'').join('') || '';
     const result = safeParseJSON(raw);
     if (!result.ok) {
@@ -268,7 +270,7 @@ router.post('/hooks', [
  
 JSON فقط: {"hooks": ["hook1","hook2","hook3","hook4","hook5"]}`;
  
-    const data = await callAI([{ role: 'user', content: prompt }], null, 400);
+    const data = await callAI([{ role: 'user', content: prompt }], null, 400, true);
     const raw = data.content?.map(c=>c.text||'').join('') || '';
     const result = safeParseJSON(raw);
     if (!result.ok) {
@@ -299,7 +301,7 @@ router.post('/caption', [
  
 JSON فقط: {"caption": "نص الكابشن الكامل", "hashtags": ["#1","#2","#3","#4","#5"]}`;
  
-    const data = await callAI([{ role: 'user', content: prompt }], null, 500);
+    const data = await callAI([{ role: 'user', content: prompt }], null, 500, true);
     const raw = data.content?.map(c=>c.text||'').join('') || '';
     const result = safeParseJSON(raw);
     if (!result.ok) {
@@ -340,7 +342,7 @@ JSON فقط:
   "suggestion": "عنوان محسّن يجمع أفضل الاثنين"
 }`;
  
-    const data = await callAI([{ role: 'user', content: prompt }], null, 400);
+    const data = await callAI([{ role: 'user', content: prompt }], null, 400, true);
     const raw = data.content?.map(c=>c.text||'').join('') || '';
     const result = safeParseJSON(raw);
     if (!result.ok) {
