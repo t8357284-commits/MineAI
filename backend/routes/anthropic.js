@@ -33,7 +33,7 @@ const messageValidation = [
 // ─── Helper ───────────────────────────────────────────────
 async function callAI(messages, systemPrompt, maxTokens = 1000, jsonMode = false) {
   const completion = await getGroq().chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
     temperature: 0.7,
     max_tokens: maxTokens,
     ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
