@@ -33,7 +33,7 @@ const messageValidation = [
 // ─── Helper ───────────────────────────────────────────────
 async function callAI(messages, systemPrompt, maxTokens = 1000) {
   const completion = await getGroq().chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'deepseek-r1-distill-llama-70b',
     temperature: 0.7,
     max_tokens: maxTokens,
     messages: [
