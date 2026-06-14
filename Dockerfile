@@ -1,28 +1,55 @@
+# ─── SocialPulse AI — Dockerfile ─────────────────────────────────────────────
+# Multi-stage build: builder → production
+#
+# NOTE: package-lock.json is not committed to this repo.
+# The builder stage uses `npm install --omit=dev` instead of `npm ci`.
+# bcrypt requires native compilation tools (python3, make, g++).
+
+# ── Stage 1: Builder ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY backend/package*.json ./backend/
-COPY backend/prisma ./backend/prisma
-RUN cd backend && npm install --omit=dev && npx prisma generate --schema=./prisma/schema.prisma
+# Build tools required for bcrypt native bindings
+RUN apk add --no-cache python3 make g++
 
+COPY backend/package.json ./backend/
+COPY backend/prisma ./backend/prisma
+
+# Use npm install (not npm ci) because package-lock.json is not present.
+# --omit=dev keeps the image lean (no jest, nodemon, etc.)
+RUN cd backend && \
+    npm install --omit=dev && \
+    npx prisma generate --schema=./prisma/schema.prisma
+
+# ── Stage 2: Production ───────────────────────────────────────────────────────
 FROM node:20-alpine AS production
 
+# Security: non-root user
 RUN addgroup -g 1001 -S nodejs && adduser -S nodeapp -u 1001
-RUN apk add --no-cache openssl
+
+# openssl: required by Prisma client at runtime
+# wget:    used by Docker HEALTHCHECK
+RUN apk add --no-cache openssl wget
 
 WORKDIR /app
 
+# Copy compiled node_modules from builder (includes native bcrypt .node files)
 COPY --from=builder /app/backend/node_modules ./backend/node_modules
+
+# Copy application source
 COPY backend/ ./backend/
 COPY frontend/public/ ./frontend/public/
 
-RUN mkdir -p logs data && chown -R nodeapp:nodejs /app
+# Create runtime directories and hand ownership to the app user
+RUN mkdir -p logs data uploads && chown -R nodeapp:nodejs /app
 
 USER nodeapp
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget -qO- http://localhost:3000/api/health/ping || exit 1
 
-CMD ["sh", "-c", "cd backend && npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss && node server.js"]
+# Run Prisma migrations then start the server.
+# `prisma migrate deploy` is idempotent — safe to run on every container start.
+CMD ["sh", "-c", "cd backend && npx prisma migrate deploy --schema=./prisma/schema.prisma && node server.js"]
