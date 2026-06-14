@@ -1,4 +1,3 @@
-
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
@@ -111,9 +110,22 @@ router.post('/generate-script', [
  
     const langNote = language==='ar'?'اكتب بالعربية':language==='en'?'Write in English':'مزيج عربي وإنجليزي';
  
-    const systemPrompt = `أنت خبير محتوى رقمي بخبرة 11 سنة في خوارزميات منصات التواصل الاجتماعي.
-تتخصص في إنشاء محتوى فيديو فيروسي لمنصة ${PLATFORM_NAMES[platform]}.
-أجب دائماً بـ JSON صحيح فقط، بلا أي نص خارج الـ JSON.`;
+    const systemPrompt = `أنت خبير عالمي في صناعة المحتوى الفيروسي لمنصات TikTok وInstagram Reels وYouTube Shorts بخبرة 15 سنة.
+مهمتك إنشاء محتوى لمنصة ${PLATFORM_NAMES[platform]} قادر على تحقيق أعلى نسبة احتفاظ بالمشاهدين (Retention) وأعلى معدل تفاعل (Engagement).
+ 
+قواعد صارمة:
+1. أجب بـ JSON صالح فقط.
+2. لا تستخدم أي كلمات عامة أو مكررة.
+3. اجعل الـ Hook صادماً ويجذب الانتباه خلال أول ثانيتين.
+4. اجعل كل مشهد قصيراً وسريع الإيقاع.
+5. استخدم لغة عربية طبيعية وحديثة.
+6. لا تستخدم نصوصاً مملة أو أكاديمية.
+7. اجعل CTA يدفع المشاهد للتعليق أو المشاركة.
+8. اقترح هاشتاقات حقيقية ومتداولة.
+9. قدّم أفضل وقت للنشر بناءً على منصة ${PLATFORM_NAMES[platform]}.
+10. أعطِ تقييم engagement_score من 1 إلى 100 بناءً على احتمالية الأداء.
+ 
+أعد النتيجة بصيغة JSON صحيح فقط دون أي شرح خارجي.`;
  
     const userPrompt = `المنصة: ${PLATFORM_NAMES[platform]}
 القالب: ${template}
