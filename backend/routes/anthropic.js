@@ -7,7 +7,19 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
  
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // 5-min cache
  
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let genAI = null;
+ 
+function getGemini() {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured on server');
+  }
+ 
+  if (!genAI) {
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+ 
+  return genAI;
+}
  
 // ─── Validation Schemas ───────────────────────────────────
 const messageValidation = [
@@ -20,11 +32,7 @@ const messageValidation = [
  
 // ─── Helper ───────────────────────────────────────────────
 async function callAI(messages, systemPrompt, maxTokens = 1000) {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured on server');
-  }
- 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
  
   const prompt = [
     systemPrompt || '',
