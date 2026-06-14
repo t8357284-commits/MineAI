@@ -11,8 +11,7 @@ const { recordAuditLog } = require('../utils/audit');
 const router = express.Router();
 
 function makeToken(user) {
-  const ttlDays = parseInt(process.env.JWT_DAYS || '14', 10);
-  return sign({ sub: user.id, email: user.email, exp: Math.floor(Date.now() / 1000) + ttlDays * 86400 });
+  return sign({ sub: user.id, email: user.email });
 }
 
 function randomToken() {
@@ -37,6 +36,7 @@ async function createEmailVerification(user, req) {
   return token;
 }
 
+// ── Register ──────────────────────────────────────────────────────────────────
 router.post('/register', [
   body('name').isString().trim().isLength({ min: 2, max: 80 }),
   body('email').isEmail().normalizeEmail(),
@@ -50,12 +50,15 @@ router.post('/register', [
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
 
+    // bcrypt is async — await it
+    const passwordHash = await hashPassword(req.body.password);
+
     const userCount = await prisma.user.count();
     const user = await prisma.user.create({
       data: {
         name: req.body.name.trim(),
         email,
-        passwordHash: hashPassword(req.body.password),
+        passwordHash,
         plan: 'free',
         role: userCount === 0 ? 'admin' : 'user',
         isActive: true,
@@ -65,10 +68,16 @@ router.post('/register', [
     try { await createEmailVerification(user, req); } catch (mailErr) { console.error('Verification email failed:', mailErr.message); }
     await recordAuditLog(req, 'USER_REGISTERED', 'User', user.id, { email: user.email, role: user.role });
 
-    res.status(201).json({ success: true, token: makeToken(user), user: publicUser(user), message: 'تم إنشاء الحساب. تحقق من بريدك لتفعيل البريد الإلكتروني.' });
+    res.status(201).json({
+      success: true,
+      token: makeToken(user),
+      user: publicUser(user),
+      message: 'تم إنشاء الحساب. تحقق من بريدك لتفعيل البريد الإلكتروني.',
+    });
   } catch (err) { next(err); }
 });
 
+// ── Login ─────────────────────────────────────────────────────────────────────
 router.post('/login', [
   body('email').isEmail().normalizeEmail(),
   body('password').isString().isLength({ min: 1, max: 100 }),
@@ -78,7 +87,13 @@ router.post('/login', [
     if (!errors.isEmpty()) return res.status(422).json({ errors: errors.array() });
 
     const user = await prisma.user.findUnique({ where: { email: req.body.email.toLowerCase() } });
-    if (!user || !verifyPassword(req.body.password, user.passwordHash) || user.isActive === false) {
+
+    // Always run verifyPassword even if user not found (prevent timing oracle)
+    const passwordOk = user
+      ? await verifyPassword(req.body.password, user.passwordHash)
+      : await verifyPassword(req.body.password, '$2b$12$invalidhashpadding000000000000000000000000000000000000000');
+
+    if (!user || !passwordOk || user.isActive === false) {
       await recordAuditLog(req, 'LOGIN_FAILED', 'User', user?.id || '', { email: req.body.email.toLowerCase() });
       return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
     }
@@ -88,6 +103,7 @@ router.post('/login', [
   } catch (err) { next(err); }
 });
 
+// ── Me ────────────────────────────────────────────────────────────────────────
 router.get('/me', requireUser, async (req, res, next) => {
   try {
     const day = new Date().toISOString().slice(0, 10);
@@ -96,6 +112,7 @@ router.get('/me', requireUser, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Forgot Password ───────────────────────────────────────────────────────────
 router.post('/forgot-password', [
   body('email').isEmail().normalizeEmail(),
 ], async (req, res, next) => {
@@ -118,10 +135,12 @@ router.post('/forgot-password', [
       await recordAuditLog(req, 'PASSWORD_RESET_REQUESTED', 'User', user.id, { email });
     }
 
+    // Always return the same response (prevent email enumeration)
     res.json({ success: true, message: 'إذا كان البريد مسجلاً، سيصلك رابط استعادة كلمة المرور.' });
   } catch (err) { next(err); }
 });
 
+// ── Reset Password ────────────────────────────────────────────────────────────
 router.post('/reset-password', [
   body('token').isString().isLength({ min: 32, max: 200 }),
   body('password').isString().isLength({ min: 8, max: 100 }),
@@ -138,12 +157,15 @@ router.post('/reset-password', [
       return res.status(400).json({ error: 'رابط الاستعادة غير صالح أو انتهت صلاحيته' });
     }
 
+    const newHash = await hashPassword(req.body.password);
+
     const user = await prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
         where: { id: reset.userId },
-        data: { passwordHash: hashPassword(req.body.password) },
+        data: { passwordHash: newHash },
       });
       await tx.passwordResetToken.update({ where: { id: reset.id }, data: { usedAt: new Date() } });
+      // Invalidate all other reset tokens for this user
       await tx.passwordResetToken.updateMany({ where: { userId: reset.userId, usedAt: null }, data: { usedAt: new Date() } });
       return updated;
     });
@@ -153,6 +175,7 @@ router.post('/reset-password', [
   } catch (err) { next(err); }
 });
 
+// ── Resend Verification ───────────────────────────────────────────────────────
 router.post('/resend-verification', requireUser, async (req, res, next) => {
   try {
     if (req.user.emailVerified) return res.json({ success: true, message: 'البريد مفعل مسبقاً' });
@@ -161,6 +184,7 @@ router.post('/resend-verification', requireUser, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Verify Email ──────────────────────────────────────────────────────────────
 router.post('/verify-email', [
   body('token').isString().isLength({ min: 32, max: 200 }),
 ], async (req, res, next) => {
