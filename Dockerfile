@@ -29,7 +29,9 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodeapp -u 1001
 
 # openssl: required by Prisma client at runtime
 # wget:    used by Docker HEALTHCHECK
-RUN apk add --no-cache openssl wget
+# python3 + pip: required for edge-tts (free TTS for FREE users)
+RUN apk add --no-cache openssl wget python3 py3-pip && \
+    pip3 install --no-cache-dir --break-system-packages edge-tts
 
 WORKDIR /app
 

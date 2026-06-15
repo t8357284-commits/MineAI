@@ -221,4 +221,117 @@ router.get('/audit-logs', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ─── Voice Provider Admin Settings — Phase 7 ──────────────────
+const factory = require('../utils/voiceProviderFactory');
+
+// GET /api/admin/voice/settings
+router.get('/voice/settings', async (_req, res, next) => {
+  try {
+    const settings = await prisma.adminSetting.findMany({
+      where: { key: { in: ['EDGE_TTS_ENABLED', 'ELEVENLABS_ENABLED'] } },
+    });
+    const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
+
+    res.json({
+      success: true,
+      settings: {
+        EDGE_TTS_ENABLED   : map.EDGE_TTS_ENABLED   ?? process.env.EDGE_TTS_ENABLED   ?? 'true',
+        ELEVENLABS_ENABLED : map.ELEVENLABS_ENABLED  ?? process.env.ELEVENLABS_ENABLED ?? 'true',
+      },
+      providers: [
+        {
+          id        : 'edge_tts',
+          name      : 'Edge TTS (Microsoft Neural)',
+          tier      : 'free',
+          configured: factory.isProviderConfigured('edge_tts'),
+          enabled   : (map.EDGE_TTS_ENABLED ?? 'true') === 'true',
+        },
+        {
+          id        : 'elevenlabs',
+          name      : 'ElevenLabs',
+          tier      : 'premium',
+          configured: factory.isProviderConfigured('elevenlabs'),
+          enabled   : (map.ELEVENLABS_ENABLED ?? 'true') === 'true',
+        },
+      ],
+      cacheStats: factory.getCacheStats(),
+    });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/admin/voice/settings
+router.patch('/voice/settings', [
+  body('EDGE_TTS_ENABLED').optional().isIn(['true', 'false']),
+  body('ELEVENLABS_ENABLED').optional().isIn(['true', 'false']),
+], async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(422).json({ errors: errors.array() });
+
+  try {
+    const updates = [];
+    if (req.body.EDGE_TTS_ENABLED !== undefined) {
+      updates.push(prisma.adminSetting.upsert({
+        where  : { key: 'EDGE_TTS_ENABLED' },
+        update : { value: req.body.EDGE_TTS_ENABLED },
+        create : { key: 'EDGE_TTS_ENABLED', value: req.body.EDGE_TTS_ENABLED },
+      }));
+      process.env.EDGE_TTS_ENABLED = req.body.EDGE_TTS_ENABLED;
+    }
+    if (req.body.ELEVENLABS_ENABLED !== undefined) {
+      updates.push(prisma.adminSetting.upsert({
+        where  : { key: 'ELEVENLABS_ENABLED' },
+        update : { value: req.body.ELEVENLABS_ENABLED },
+        create : { key: 'ELEVENLABS_ENABLED', value: req.body.ELEVENLABS_ENABLED },
+      }));
+      process.env.ELEVENLABS_ENABLED = req.body.ELEVENLABS_ENABLED;
+    }
+
+    await Promise.all(updates);
+    res.json({ success: true, message: 'تم تحديث إعدادات مزودي الصوت' });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/admin/voice/cache
+router.delete('/voice/cache', async (_req, res, next) => {
+  try {
+    factory.clearCache();
+    res.json({ success: true, message: 'تم مسح ذاكرة التخزين المؤقت للصوت' });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/voice/stats
+router.get('/voice/stats', async (_req, res, next) => {
+  try {
+    const [totalJobs, completedJobs, failedJobs, byProvider, recentJobs] = await Promise.all([
+      prisma.voiceJob.count(),
+      prisma.voiceJob.count({ where: { status: 'completed' } }),
+      prisma.voiceJob.count({ where: { status: 'failed' } }),
+      prisma.voiceJob.groupBy({
+        by      : ['provider'],
+        _count  : { provider: true },
+        _avg    : { processingTime: true },
+      }),
+      prisma.voiceJob.findMany({
+        orderBy : { createdAt: 'desc' },
+        take    : 10,
+        include : { user: { select: { name: true, email: true, plan: true } }, audio: { select: { sizeBytes: true, fromCache: true } } },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalJobs, completedJobs, failedJobs,
+        byProvider: byProvider.map(p => ({
+          provider      : p.provider,
+          count         : p._count.provider,
+          avgProcessingMs: Math.round(p._avg.processingTime || 0),
+        })),
+      },
+      cacheStats  : factory.getCacheStats(),
+      recentJobs,
+    });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

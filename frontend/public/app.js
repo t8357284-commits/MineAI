@@ -62,87 +62,223 @@ $('#analysisForm').onsubmit=async e=>{e.preventDefault(); try{const d=await api(
 async function scriptsPage(){ if(!requireLogin())return; pageWrap('scripts',`<div class="grid"><div class="card"><h2>السكريبتات المحفوظة</h2></div><div id="scriptsList" class="grid"></div></div>`); try{ const d=await api('/api/scripts'); $('#scriptsList').innerHTML=d.scripts.length?d.scripts.map(s=>`<div class="card"><h3>${safe(s.title)}</h3><p class="muted">${safe(s.platform)} — ${fmtDate(s.createdAt)}</p><div class="result">${safe(JSON.stringify(s.content,null,2))}</div><button class="ghost danger" data-del-script="${s.id}">حذف</button></div>`).join(''):`<div class="empty">لا توجد سكريبتات محفوظة.</div>`; $$('[data-del-script]').forEach(b=>b.onclick=async()=>{try{await api('/api/scripts/'+b.dataset.delScript,{method:'DELETE'});toast('تم الحذف');scriptsPage();}catch(e){toast(e.message,false)}}); }catch(e){toast(e.message,false)} }
 
 // ─── Voice Over Studio ─────────────────────────────────────
+// ─── Voice Over Studio (Hybrid: Free=EdgeTTS / Premium=ElevenLabs) ──────────
+
 async function voiceStudioPage(){
   if(!requireLogin())return;
+  const isPremium = state.user.plan==='pro' || state.user.plan==='business';
+
   pageWrap('voice', `
+    <!-- Upgrade Modal -->
+    <div id="upgradeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:none;align-items:center;justify-content:center">
+      <div class="card" style="max-width:420px;text-align:center;padding:2rem">
+        <h2>⭐ ميزة مميزة</h2>
+        <p class="muted">أصوات ElevenLabs متاحة فقط لمستخدمي خطة Pro وBusiness.</p>
+        <p class="muted" style="margin-bottom:1.5rem">قم بترقية خطتك للاستمتاع بأعلى جودة صوتية.</p>
+        <div class="actions" style="justify-content:center;gap:8px">
+          <button class="primary" onclick="setPage('billing')">ترقية الخطة ⚡</button>
+          <button class="ghost" id="closeModal">إلغاء</button>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-2">
       <div class="card">
-        <h2>🎙️ استوديو التعليق الصوتي بالذكاء الاصطناعي</h2>
-        <p class="muted">حوّل نص السكريبت إلى تعليق صوتي عربي أو إنجليزي باستخدام ElevenLabs أو PlayHT.</p>
+        <h2>🎙️ استوديو التعليق الصوتي</h2>
+        <p class="muted">
+          ${isPremium
+            ? '⭐ خطتك المميزة: وصول كامل لأصوات ElevenLabs عالية الجودة وأصوات Edge TTS المجانية.'
+            : '🆓 الخطة المجانية: تعليق صوتي بأصوات Microsoft Edge (عالية الجودة — مجاناً تماماً).'}
+        </p>
+
+        <!-- Tier Tabs -->
+        <div class="tabs" style="margin-bottom:12px" id="voiceTierTabs">
+          <button class="tab active" data-tier="free" id="tabFree">🆓 أصوات مجانية</button>
+          <button class="tab" data-tier="premium" id="tabPremium">⭐ أصوات مميزة ${isPremium?'':' 🔒'}</button>
+        </div>
+
         <form class="form" id="voiceForm">
-          <div class="grid grid-3">
-            <div class="field"><label>المزود</label><select class="input" name="provider" id="vProvider">${voiceProviders.map(p=>`<option value="${p[0]}">${p[1]}</option>`).join('')}</select></div>
-            <div class="field"><label>اللغة</label><select class="input" name="language" id="vLanguage">${voiceLanguages.map(l=>`<option value="${l[0]}">${l[1]}</option>`).join('')}</select></div>
-            <div class="field"><label>الجنس</label><select class="input" name="gender" id="vGender">${voiceGenders.map(g=>`<option value="${g[0]}">${g[1]}</option>`).join('')}</select></div>
+          <input type="hidden" name="tier" id="vTier" value="free">
+          <div class="grid grid-2">
+            <div class="field"><label>اللغة</label>
+              <select class="input" name="language" id="vLanguage">
+                ${voiceLanguages.map(l=>`<option value="${l[0]}">${l[1]}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>الجنس</label>
+              <select class="input" name="gender" id="vGender">
+                ${voiceGenders.map(g=>`<option value="${g[0]}">${g[1]}</option>`).join('')}
+              </select>
+            </div>
           </div>
-          <div class="field"><label>الصوت</label><select class="input" name="voiceId" id="vVoice"><option value="">جاري تحميل الأصوات...</option></select></div>
-          <div class="field"><label>النص</label><textarea name="text" id="vText" placeholder="اكتب أو الصق نص السكريبت هنا (حتى 5000 حرف)..." required maxlength="5000" style="min-height:160px"></textarea></div>
+          <div class="field" id="freeVoiceField">
+            <label>الصوت المجاني <span class="pill" style="background:#22c55e;color:#fff;font-size:.7rem">Edge TTS</span></label>
+            <select class="input" name="voiceId" id="vVoiceFree"><option>جاري التحميل...</option></select>
+          </div>
+          <div class="field" id="premiumVoiceField" style="display:none">
+            <label>الصوت المميز <span class="pill" style="background:#f59e0b;color:#fff;font-size:.7rem">ElevenLabs</span></label>
+            <select class="input" name="voiceId" id="vVoicePremium"><option>جاري التحميل...</option></select>
+          </div>
+          <div class="field">
+            <label>النص <span class="muted mini" id="vCharCount">0 / 5000</span></label>
+            <textarea name="text" id="vText" placeholder="اكتب أو الصق نص السكريبت هنا (حتى 5000 حرف)..." required maxlength="5000" style="min-height:160px"></textarea>
+          </div>
           <button class="primary" id="vGenBtn">🔊 توليد الصوت</button>
         </form>
       </div>
+
       <div class="card">
         <h2>المعاينة والتحميل</h2>
         <div id="vResult" class="empty">سيظهر التعليق الصوتي المولّد هنا بعد التوليد...</div>
       </div>
     </div>
+
     <div class="card" style="margin-top:16px">
       <h2>سجل الأصوات المولّدة</h2>
       <div id="vHistory" class="grid grid-2"></div>
     </div>
   `);
 
-  async function loadVoiceOptions(){
-    const provider=$('#vProvider').value, language=$('#vLanguage').value, gender=$('#vGender').value;
-    const sel=$('#vVoice');
-    sel.innerHTML='<option value="">جاري تحميل الأصوات...</option>';
-    try{
-      const d=await api(`/api/voice/voices?provider=${provider}&language=${language}&gender=${gender}`);
-      if(!d.voices.length){ sel.innerHTML='<option value="">لا توجد أصوات متاحة لهذا الاختيار</option>'; return; }
-      sel.innerHTML=d.voices.map(v=>`<option value="${safe(v.voiceId)}" data-name="${safe(v.name)}">${safe(v.name)}</option>`).join('');
-      const cfg=d.providers.find(p=>p.id===provider);
-      if(cfg && !cfg.configured) toast(`تنبيه: مزود ${voiceProviderNames[provider]} غير مهيأ على الخادم (مفتاح API مفقود)`, false);
-    }catch(e){ sel.innerHTML='<option value="">تعذر تحميل قائمة الأصوات</option>'; toast(e.message,false); }
-  }
-  $('#vProvider').onchange=loadVoiceOptions;
-  $('#vLanguage').onchange=loadVoiceOptions;
-  $('#vGender').onchange=loadVoiceOptions;
-  await loadVoiceOptions();
+  // ── Upgrade modal ──
+  const modal = $('#upgradeModal');
+  if(modal) { modal.style.display='none'; }
+  const closeModal = $('#closeModal');
+  if(closeModal) closeModal.onclick = () => { modal.style.display='none'; };
+  modal.style.display = 'none';
 
-  $('#voiceForm').onsubmit=async e=>{
+  function showUpgradeModal() {
+    modal.style.display = 'flex';
+  }
+
+  // ── Tier tabs ──
+  let currentTier = 'free';
+  function switchTier(tier) {
+    currentTier = tier;
+    $('#vTier').value = tier;
+    $('#tabFree').classList.toggle('active', tier==='free');
+    $('#tabPremium').classList.toggle('active', tier==='premium');
+    $('#freeVoiceField').style.display   = tier==='free'    ? '' : 'none';
+    $('#premiumVoiceField').style.display = tier==='premium' ? '' : 'none';
+    if(tier==='premium' && !isPremium) {
+      showUpgradeModal();
+      switchTier('free');
+      return;
+    }
+    refreshActiveVoiceSelect();
+  }
+
+  $('#tabFree').onclick    = () => switchTier('free');
+  $('#tabPremium').onclick = () => switchTier('premium');
+
+  // ── Character counter ──
+  $('#vText').oninput = () => {
+    $('#vCharCount').textContent = `${$('#vText').value.length} / 5000`;
+  };
+
+  // ── Voice loading ──
+  let catalogCache = null;
+
+  async function loadVoiceCatalog() {
+    const language = $('#vLanguage').value;
+    const gender   = $('#vGender').value;
+    try {
+      const d = await api(`/api/voice/voices?language=${language}&gender=${gender}`);
+      catalogCache = d;
+
+      const fSel = $('#vVoiceFree');
+      const pSel = $('#vVoicePremium');
+
+      fSel.innerHTML = d.freeVoices.length
+        ? d.freeVoices.map(v=>`<option value="${safe(v.voiceId)}" data-name="${safe(v.name)}">${safe(v.name)}</option>`).join('')
+        : '<option value="">لا توجد أصوات مجانية لهذا الاختيار</option>';
+
+      pSel.innerHTML = d.premiumVoices.length
+        ? d.premiumVoices.map(v=>`<option value="${safe(v.voiceId)}" data-name="${safe(v.name)}">${safe(v.name)}</option>`).join('')
+        : '<option value="">لا توجد أصوات مميزة لهذا الاختيار</option>';
+
+      if(!d.providers.find(p=>p.id==='edge_tts')?.configured) {
+        toast('تنبيه: edge-tts غير مثبت على الخادم — تشغيل: pip install edge-tts', false);
+      }
+    } catch(e) {
+      $('#vVoiceFree').innerHTML = '<option value="">تعذر تحميل الأصوات</option>';
+      toast(e.message, false);
+    }
+  }
+
+  function refreshActiveVoiceSelect() {
+    const selId = currentTier==='free' ? '#vVoiceFree' : '#vVoicePremium';
+    // ensure the hidden select doesn't submit
+    const freeSel     = $('#vVoiceFree');
+    const premiumSel  = $('#vVoicePremium');
+    freeSel.name    = currentTier==='free'    ? 'voiceId' : '_voiceId_free';
+    premiumSel.name = currentTier==='premium' ? 'voiceId' : '_voiceId_prem';
+  }
+
+  $('#vLanguage').onchange = loadVoiceCatalog;
+  $('#vGender').onchange   = loadVoiceCatalog;
+  await loadVoiceCatalog();
+  refreshActiveVoiceSelect();
+
+  // ── Form submit ──
+  $('#voiceForm').onsubmit = async e => {
     e.preventDefault();
-    const btn=$('#vGenBtn');
-    const text=$('#vText').value.trim();
-    if(!text){ toast('يرجى كتابة نص للتحويل',false); return; }
-    btn.disabled=true; btn.textContent='⏳ جاري التوليد...';
-    const fd=Object.fromEntries(new FormData(e.target));
-    const voiceOpt=$('#vVoice').selectedOptions[0];
-    if(voiceOpt){ fd.voiceName = voiceOpt.dataset.name; }
-    if(!fd.voiceId){ delete fd.voiceId; delete fd.voiceName; }
-    $('#vResult').innerHTML='<div class="empty">جاري توليد الصوت، قد يستغرق الأمر بضع ثوانٍ...</div>';
-    try{
-      const d=await api('/api/voice/generate',{method:'POST',body:JSON.stringify(fd)});
-      renderVoiceResult(d.audio);
-      toast('تم توليد التعليق الصوتي بنجاح');
+    const btn  = $('#vGenBtn');
+    const text = $('#vText').value.trim();
+    if(!text){ toast('يرجى كتابة نص للتحويل', false); return; }
+
+    btn.disabled    = true;
+    btn.textContent = '⏳ جاري التوليد...';
+    $('#vResult').innerHTML = '<div class="empty">⏳ جاري توليد الصوت...</div>';
+
+    const fd = Object.fromEntries(new FormData(e.target));
+    // Determine actual provider based on tier
+    fd.provider = currentTier==='premium' ? 'elevenlabs' : 'edge_tts';
+    fd.language = $('#vLanguage').value;
+    fd.gender   = $('#vGender').value;
+
+    // resolve voiceName from selected option
+    const selEl = currentTier==='free' ? $('#vVoiceFree') : $('#vVoicePremium');
+    const selOpt = selEl.selectedOptions[0];
+    if(selOpt) { fd.voiceId = selOpt.value; fd.voiceName = selOpt.dataset.name || ''; }
+    if(!fd.voiceId) { delete fd.voiceId; delete fd.voiceName; }
+
+    try {
+      const d = await api('/api/voice/generate', { method:'POST', body:JSON.stringify(fd) });
+      renderVoiceResult(d.audio, d);
+      const extra = d.fallbackUsed ? ' (تم الرجوع إلى Edge TTS تلقائياً)' : '';
+      toast(`✅ تم توليد الصوت — ${d.usedProvider}${extra}`);
       loadVoiceHistory();
-    }catch(err){
-      $('#vResult').innerHTML=`<div class="empty">${safe(err.message)}</div>`;
-      toast(err.message,false);
-    }finally{ btn.disabled=false; btn.textContent='🔊 توليد الصوت'; }
+    } catch(err) {
+      if(err.message && err.message.includes('upgradeRequired')) {
+        showUpgradeModal();
+      } else {
+        $('#vResult').innerHTML = `<div class="empty">⚠️ ${safe(err.message)}</div>`;
+        toast(err.message, false);
+      }
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '🔊 توليد الصوت';
+    }
   };
 
   loadVoiceHistory();
 }
 
-function renderVoiceResult(audio){
+function renderVoiceResult(audio, meta){
   const el=$('#vResult'); if(!el || !audio) return;
   const snippet = audio.text.length>220 ? audio.text.slice(0,220)+'…' : audio.text;
+  const providerLabel = audio.provider==='edge_tts' ? '🆓 Edge TTS' : audio.provider==='elevenlabs' ? '⭐ ElevenLabs' : safe(audio.provider);
+  const cacheTag = meta?.fromCache ? '<span class="pill" style="background:#6366f1;color:#fff">⚡ من الكاش</span>' : '';
+  const fallbackTag = meta?.fallbackUsed ? '<span class="pill" style="background:#f59e0b;color:#fff">↩ fallback</span>' : '';
   el.innerHTML=`
     <div class="audio-card">
       <div class="audio-meta">
-        <span class="pill">${safe(voiceProviderNames[audio.provider]||audio.provider)}</span>
+        <span class="pill">${providerLabel}</span>
         <span class="pill">${safe(voiceLanguageNames[audio.language]||audio.language)}</span>
         <span class="pill">${safe(voiceGenderNames[audio.gender]||audio.gender)}</span>
+        ${cacheTag}${fallbackTag}
         <span class="muted mini">${safe(audio.voiceName||audio.voiceId)}</span>
+        ${meta?.processingMs ? `<span class="muted mini">${meta.processingMs}ms</span>` : ''}
       </div>
       <audio class="audio-player" controls preload="metadata" src="${safe(audio.url)}"></audio>
       <p class="muted mini">${safe(snippet)}</p>
@@ -159,15 +295,17 @@ async function loadVoiceHistory(){
     const d=await api('/api/voice/history?pageSize=20');
     el.innerHTML = d.jobs.length ? d.jobs.map(j=>{
       const snippet = j.text.length>140 ? j.text.slice(0,140)+'…' : j.text;
+      const providerLabel = j.provider==='edge_tts' ? '🆓 Edge TTS' : j.provider==='elevenlabs' ? '⭐ ElevenLabs' : safe(j.provider);
       return `<div class="card audio-card">
         <div class="audio-meta">
-          <span class="pill">${safe(voiceProviderNames[j.provider]||j.provider)}</span>
+          <span class="pill">${providerLabel}</span>
           <span class="pill">${safe(voiceLanguageNames[j.language]||j.language)}</span>
           <span class="pill">${safe(voiceGenderNames[j.gender]||j.gender)}</span>
           <span class="pill ${j.status}">${voiceStatusAr[j.status]||j.status}</span>
+          ${j.fallbackUsed?'<span class="pill" style="background:#f59e0b;color:#fff">↩ fallback</span>':''}
         </div>
         <p class="muted mini">${safe(snippet)}</p>
-        <p class="muted mini">${safe(j.voiceName||j.voiceId)} — ${fmtDate(j.createdAt)}</p>
+        <p class="muted mini">${safe(j.voiceName||j.voiceId)} — ${fmtDate(j.createdAt)}${j.processingTime?` — ${j.processingTime}ms`:''}</p>
         ${j.audio ? `<audio class="audio-player" controls preload="none" src="${safe(j.audio.url)}"></audio>
           <div class="actions"><a class="ghost" href="${safe(j.audio.url)}" download="voice-${safe(j.audio.id)}.mp3">⬇ تحميل</a><button class="ghost danger" data-del-voice="${j.id}">حذف</button></div>`
         : j.status==='failed' ? `<p class="muted mini">⚠️ ${safe(j.errorMessage||'فشل التوليد')}</p><div class="actions"><button class="ghost danger" data-del-voice="${j.id}">حذف</button></div>`
@@ -188,6 +326,43 @@ async function adminPage(){ if(!requireLogin())return; if(state.user.role!=='adm
 async function renderAdmin(tab){ const box=$('#adminBox'); box.innerHTML='<div class="card">جاري التحميل...</div>'; try{ if(tab==='overview'){const d=await api('/api/admin/overview'); box.innerHTML=`<div class="stats"><div class="stat"><span>المستخدمون</span><b>${d.stats.users}</b></div><div class="stat"><span>النشطون</span><b>${d.stats.activeUsers}</b></div><div class="stat"><span>المشاريع</span><b>${d.stats.projects}</b></div><div class="stat"><span>AI اليوم</span><b>${d.stats.aiRequestsToday}</b></div></div>`;} 
 else if(tab==='users'){const d=await api('/api/admin/users?pageSize=100'); box.innerHTML=`<div class="card"><h2>المستخدمون</h2><div class="table-wrap"><table class="table"><tr><th>الاسم</th><th>البريد</th><th>الخطة</th><th>الدور</th><th>الحالة</th><th>إجراءات</th></tr>${d.users.map(u=>`<tr><td>${safe(u.name)}</td><td>${safe(u.email)}</td><td><span class="pill ${u.plan}">${plans[u.plan]}</span><br><span class="mini">${fmtDate(u.planExpiresAt)}</span></td><td>${u.role}</td><td>${u.isActive?'نشط':'معطل'}</td><td><div class="actions"><button class="ghost" data-sub="${u.id}">تفعيل</button><button class="ghost" data-role="${u.id}" data-current="${u.role}">${u.role==='admin'?'جعله user':'جعله admin'}</button><button class="ghost danger" data-active="${u.id}" data-current="${u.isActive}">${u.isActive?'تعطيل':'تفعيل'}</button></div></td></tr>`).join('')}</table></div></div>`; bindAdminUsers();}
 else if(tab==='payments'){const d=await api('/api/payments/admin?status=PENDING'); box.innerHTML=`<div class="card"><h2>طلبات الدفع المعلقة</h2>${d.payments.length?`<div class="table-wrap"><table class="table"><tr><th>المستخدم</th><th>الخطة</th><th>المبلغ</th><th>الطريقة</th><th>السند</th><th>إجراءات</th></tr>${d.payments.map(p=>`<tr><td>${safe(p.user?.name)}<br><span class="mini">${safe(p.user?.email)}</span></td><td>${plans[p.plan]}<br>${p.requestedDays} يوم</td><td>${p.amount} ${p.currency}</td><td>${safe(p.paymentMethod)}<br>${safe(p.transactionNumber)}</td><td><a class="ghost" target="_blank" href="${safe(p.receiptImage)}">عرض</a></td><td><div class="actions"><button class="ghost success" data-approve="${p.id}">قبول</button><button class="ghost danger" data-reject="${p.id}">رفض</button></div></td></tr>`).join('')}</table></div>`:'<div class="empty">لا توجد طلبات معلقة.</div>'}</div>`; bindAdminPayments();}
+else if(tab==='voice'){ const d=await api('/api/admin/voice/settings'); const s=await api('/api/admin/voice/stats');
+  box.innerHTML=`<div class="grid grid-2">
+    <div class="card"><h2>🎙️ إعدادات مزودي الصوت</h2>
+    <div class="kv">
+      <b>Edge TTS (مجاني)</b>
+      <div class="actions">
+        <span class="pill ${d.providers[0].configured?'completed':'failed'}">${d.providers[0].configured?'✅ متاح':'❌ غير مثبت'}</span>
+        <button class="ghost" data-toggle-provider="edge_tts" data-current="${d.settings.EDGE_TTS_ENABLED}">${d.settings.EDGE_TTS_ENABLED==='true'?'تعطيل':'تفعيل'}</button>
+      </div>
+      <b>ElevenLabs (مميز)</b>
+      <div class="actions">
+        <span class="pill ${d.providers[1].configured?'completed':'failed'}">${d.providers[1].configured?'✅ مُهيَّأ':'❌ مفتاح API مفقود'}</span>
+        <button class="ghost" data-toggle-provider="elevenlabs" data-current="${d.settings.ELEVENLABS_ENABLED}">${d.settings.ELEVENLABS_ENABLED==='true'?'تعطيل':'تفعيل'}</button>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button class="ghost danger" id="clearVoiceCache">🗑 مسح كاش الصوت (${d.cacheStats.keys} مفتاح)</button>
+    </div></div>
+    <div class="card"><h2>📊 إحصائيات الصوت</h2>
+    <div class="stats">
+      <div class="stat"><span>إجمالي</span><b>${s.stats.totalJobs}</b></div>
+      <div class="stat"><span>مكتمل</span><b>${s.stats.completedJobs}</b></div>
+      <div class="stat"><span>فشل</span><b>${s.stats.failedJobs}</b></div>
+      <div class="stat"><span>كاش hits</span><b>${d.cacheStats.hits}</b></div>
+    </div>
+    <div style="margin-top:12px">${s.stats.byProvider.map(p=>`<p class="muted mini">${p.provider}: ${p.count} طلب — متوسط ${p.avgProcessingMs}ms</p>`).join('')}</div>
+    </div></div>`;
+  $$('[data-toggle-provider]').forEach(b=>b.onclick=async()=>{
+    const prov=b.dataset.toggleProvider, cur=b.dataset.current;
+    const newVal = cur==='true'?'false':'true';
+    const payload={};payload[prov==='edge_tts'?'EDGE_TTS_ENABLED':'ELEVENLABS_ENABLED']=newVal;
+    try{ await api('/api/admin/voice/settings',{method:'PATCH',body:JSON.stringify(payload)}); toast('تم التحديث'); renderAdmin('voice'); }
+    catch(e){toast(e.message,false);}
+  });
+  const cc=$('#clearVoiceCache');
+  if(cc) cc.onclick=async()=>{ try{ await api('/api/admin/voice/cache',{method:'DELETE'}); toast('تم مسح الكاش'); renderAdmin('voice'); }catch(e){toast(e.message,false);} };
+}
 else {const d=await api('/api/admin/audit-logs?pageSize=100'); box.innerHTML=`<div class="card"><h2>Audit Logs</h2><div class="table-wrap"><table class="table"><tr><th>التاريخ</th><th>الفاعل</th><th>العملية</th><th>الكيان</th><th>التفاصيل</th></tr>${d.logs.map(l=>`<tr><td>${fmtDate(l.createdAt)}</td><td>${safe(l.actor?.email||'system')}</td><td>${safe(l.action)}</td><td>${safe(l.entityType)}<br><span class="mini">${safe(l.entityId)}</span></td><td><pre class="mini">${safe(JSON.stringify(l.metadata||{},null,2))}</pre></td></tr>`).join('')}</table></div></div>`;}
 }catch(e){box.innerHTML=`<div class="empty">${safe(e.message)}</div>`;} }
 function bindAdminUsers(){ $$('[data-sub]').forEach(b=>b.onclick=async()=>{const plan=prompt('الخطة: pro أو business أو free','pro'); if(!plan)return; const days=prompt('المدة بالأيام','30')||'30'; try{await api(`/api/admin/users/${b.dataset.sub}/subscription`,{method:'POST',body:JSON.stringify({plan,days:Number(days),note:'تفعيل يدوي من الواجهة'})});toast('تم تحديث الاشتراك');renderAdmin('users');}catch(e){toast(e.message,false)}}); $$('[data-role]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/users/${b.dataset.role}`,{method:'PATCH',body:JSON.stringify({role:b.dataset.current==='admin'?'user':'admin'})});toast('تم تحديث الدور');renderAdmin('users');}catch(e){toast(e.message,false)}}); $$('[data-active]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/users/${b.dataset.active}`,{method:'PATCH',body:JSON.stringify({isActive:b.dataset.current!=='true'})});toast('تم تحديث الحالة');renderAdmin('users');}catch(e){toast(e.message,false)}}); }
