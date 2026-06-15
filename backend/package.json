@@ -29,6 +29,7 @@
     "express-validator": "^7.0.1",
     "@prisma/client": "^5.22.0",
     "groq-sdk": "^0.15.0",
+    "edge-tts": "^1.1.0",
     "multer": "^1.4.5-lts.1",
     "cloudinary": "^2.5.1",
     "nodemailer": "^6.9.16",
