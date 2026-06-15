@@ -9,6 +9,13 @@ const categoriesAr = {
   'Restaurants': 'مطاعم', 'Real Estate': 'عقارات', 'E-commerce': 'تجارة إلكترونية', 'Education': 'تعليم',
   'News': 'أخبار', 'Fitness': 'لياقة بدنية', 'Beauty': 'تجميل', 'Finance': 'مالية', 'Technology': 'تقنية', 'Motivation': 'تحفيز'
 };
+const voiceProviders = [['elevenlabs','ElevenLabs'],['playht','PlayHT']];
+const voiceProviderNames = {elevenlabs:'ElevenLabs', playht:'PlayHT'};
+const voiceLanguages = [['ar','العربية'],['en','English']];
+const voiceLanguageNames = {ar:'العربية', en:'English'};
+const voiceGenders = [['male','ذكر'],['female','أنثى']];
+const voiceGenderNames = {male:'ذكر', female:'أنثى'};
+const voiceStatusAr = {pending:'قيد الانتظار', processing:'جاري المعالجة', completed:'مكتمل', failed:'فشل'};
 const fmtDate = d => d ? new Date(d).toLocaleString('ar-YE') : '—';
 const safe = v => String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const toast = (msg, ok=true) => { const el=document.createElement('div'); el.className='toast '+(ok?'ok':'err'); el.textContent=msg; $('#toast').appendChild(el); setTimeout(()=>el.remove(),4500); };
@@ -43,7 +50,7 @@ function renderAuth(mode){
   const f=$('form',box); f.onsubmit=async e=>{ e.preventDefault(); const body=Object.fromEntries(new FormData(f)); try{ const path=mode==='register'?'/api/auth/register':mode==='forgot'?'/api/auth/forgot-password':'/api/auth/login'; const d=await api(path,{method:'POST',body:JSON.stringify(body)}); if(d.token){ state.token=d.token; localStorage.setItem('sp_token',d.token); await loadMe(); toast(d.message||'تم بنجاح'); setPage('dashboard'); } else toast(d.message||'تم إرسال الطلب'); }catch(err){ toast(err.message,false); } };
 }
 function requireLogin(){ if(!state.user){ setPage('auth'); return false;} return true; }
-function side(active){ const items=[['dashboard','الرئيسية'],['templates','متجر القوالب'],['projects','المشاريع'],['ai','أدوات الذكاء الاصطناعي'],['scripts','السكريبتات'],['billing','الاشتراك والدفع'],['files','ملفاتي']]; if(state.user?.role==='admin') items.push(['admin','لوحة الأدمن']); return `<aside class="card sidebar">${items.map(i=>`<button class="side-btn ${active===i[0]?'active':''}" data-page="${i[0]}">${i[1]}</button>`).join('')}</aside>`; }
+function side(active){ const items=[['dashboard','الرئيسية'],['templates','متجر القوالب'],['projects','المشاريع'],['ai','أدوات الذكاء الاصطناعي'],['voice','استوديو التعليق الصوتي'],['scripts','السكريبتات'],['billing','الاشتراك والدفع'],['files','ملفاتي']]; if(state.user?.role==='admin') items.push(['admin','لوحة الأدمن']); return `<aside class="card sidebar">${items.map(i=>`<button class="side-btn ${active===i[0]?'active':''}" data-page="${i[0]}">${i[1]}</button>`).join('')}</aside>`; }
 function pageWrap(active, inner){ shell(`<main class="container layout">${side(active)}<section class="content">${inner}</section></main>`); bindNav(); }
 function dashboard(){ if(!requireLogin())return; pageWrap('dashboard',`<div class="grid"><div class="card"><h2>مرحباً، ${safe(state.user.name)}</h2><p class="muted">الخطة الحالية: <span class="pill ${state.user.plan}">${plans[state.user.plan]||state.user.plan}</span> ${state.user.planExpiresAt?`— تنتهي: ${fmtDate(state.user.planExpiresAt)}`:''}</p><p class="muted">تفعيل البريد: ${state.user.emailVerified?'✅ مفعل':'⚠️ غير مفعل'} ${!state.user.emailVerified?`<button class="ghost" id="resendVerify">إعادة إرسال التفعيل</button>`:''}</p></div><div class="stats"><div class="stat"><span class="muted">طلبات AI اليوم</span><b>${state.usage?.aiRequests||0}</b></div><div class="stat"><span class="muted">الخطة</span><b>${plans[state.user.plan]}</b></div><div class="stat"><span class="muted">الحالة</span><b>${state.user.subscriptionStatus||'inactive'}</b></div><div class="stat"><span class="muted">الدور</span><b>${state.user.role}</b></div></div><div class="grid grid-3"><button class="primary" data-page="ai">توليد محتوى الآن</button><button class="ghost" data-page="projects">إدارة المشاريع</button><button class="ghost" data-page="billing">رفع سند دفع</button></div></div>`); const rv=$('#resendVerify'); if(rv) rv.onclick=async()=>{try{const d=await api('/api/auth/resend-verification',{method:'POST'});toast(d.message)}catch(e){toast(e.message,false)}}; }
 async function projectsPage(){ if(!requireLogin())return; pageWrap('projects',`<div class="grid"><div class="card"><h2>المشاريع</h2><form class="form grid grid-3" id="projectForm"><input class="input" name="title" placeholder="اسم المشروع" required minlength="2"><select name="platform" class="input">${platforms.map(p=>`<option value="${p[0]}">${p[1]}</option>`).join('')}</select><input class="input" name="description" placeholder="وصف مختصر"><button class="primary">إضافة مشروع</button></form></div><div id="projectsList" class="grid"></div></div>`); $('#projectForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/projects',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('تم إنشاء المشروع'); projectsPage();}catch(err){toast(err.message,false)}}; loadProjectsList(); }
@@ -53,6 +60,127 @@ $('#saveScriptBtn').onclick=async()=>{if(!lastScript)return; try{await api('/api
 $('#hashForm').onsubmit=async e=>{e.preventDefault(); try{const d=await api('/api/ai/hashtags',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))}); $('#aiResult').textContent=JSON.stringify(d,null,2);}catch(err){toast(err.message,false)}};
 $('#analysisForm').onsubmit=async e=>{e.preventDefault(); try{const d=await api('/api/ai/analyze-account',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))}); $('#aiResult').textContent=d.analysis;}catch(err){toast(err.message,false)}}; }
 async function scriptsPage(){ if(!requireLogin())return; pageWrap('scripts',`<div class="grid"><div class="card"><h2>السكريبتات المحفوظة</h2></div><div id="scriptsList" class="grid"></div></div>`); try{ const d=await api('/api/scripts'); $('#scriptsList').innerHTML=d.scripts.length?d.scripts.map(s=>`<div class="card"><h3>${safe(s.title)}</h3><p class="muted">${safe(s.platform)} — ${fmtDate(s.createdAt)}</p><div class="result">${safe(JSON.stringify(s.content,null,2))}</div><button class="ghost danger" data-del-script="${s.id}">حذف</button></div>`).join(''):`<div class="empty">لا توجد سكريبتات محفوظة.</div>`; $$('[data-del-script]').forEach(b=>b.onclick=async()=>{try{await api('/api/scripts/'+b.dataset.delScript,{method:'DELETE'});toast('تم الحذف');scriptsPage();}catch(e){toast(e.message,false)}}); }catch(e){toast(e.message,false)} }
+
+// ─── Voice Over Studio ─────────────────────────────────────
+async function voiceStudioPage(){
+  if(!requireLogin())return;
+  pageWrap('voice', `
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>🎙️ استوديو التعليق الصوتي بالذكاء الاصطناعي</h2>
+        <p class="muted">حوّل نص السكريبت إلى تعليق صوتي عربي أو إنجليزي باستخدام ElevenLabs أو PlayHT.</p>
+        <form class="form" id="voiceForm">
+          <div class="grid grid-3">
+            <div class="field"><label>المزود</label><select class="input" name="provider" id="vProvider">${voiceProviders.map(p=>`<option value="${p[0]}">${p[1]}</option>`).join('')}</select></div>
+            <div class="field"><label>اللغة</label><select class="input" name="language" id="vLanguage">${voiceLanguages.map(l=>`<option value="${l[0]}">${l[1]}</option>`).join('')}</select></div>
+            <div class="field"><label>الجنس</label><select class="input" name="gender" id="vGender">${voiceGenders.map(g=>`<option value="${g[0]}">${g[1]}</option>`).join('')}</select></div>
+          </div>
+          <div class="field"><label>الصوت</label><select class="input" name="voiceId" id="vVoice"><option value="">جاري تحميل الأصوات...</option></select></div>
+          <div class="field"><label>النص</label><textarea name="text" id="vText" placeholder="اكتب أو الصق نص السكريبت هنا (حتى 5000 حرف)..." required maxlength="5000" style="min-height:160px"></textarea></div>
+          <button class="primary" id="vGenBtn">🔊 توليد الصوت</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>المعاينة والتحميل</h2>
+        <div id="vResult" class="empty">سيظهر التعليق الصوتي المولّد هنا بعد التوليد...</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>سجل الأصوات المولّدة</h2>
+      <div id="vHistory" class="grid grid-2"></div>
+    </div>
+  `);
+
+  async function loadVoiceOptions(){
+    const provider=$('#vProvider').value, language=$('#vLanguage').value, gender=$('#vGender').value;
+    const sel=$('#vVoice');
+    sel.innerHTML='<option value="">جاري تحميل الأصوات...</option>';
+    try{
+      const d=await api(`/api/voice/voices?provider=${provider}&language=${language}&gender=${gender}`);
+      if(!d.voices.length){ sel.innerHTML='<option value="">لا توجد أصوات متاحة لهذا الاختيار</option>'; return; }
+      sel.innerHTML=d.voices.map(v=>`<option value="${safe(v.voiceId)}" data-name="${safe(v.name)}">${safe(v.name)}</option>`).join('');
+      const cfg=d.providers.find(p=>p.id===provider);
+      if(cfg && !cfg.configured) toast(`تنبيه: مزود ${voiceProviderNames[provider]} غير مهيأ على الخادم (مفتاح API مفقود)`, false);
+    }catch(e){ sel.innerHTML='<option value="">تعذر تحميل قائمة الأصوات</option>'; toast(e.message,false); }
+  }
+  $('#vProvider').onchange=loadVoiceOptions;
+  $('#vLanguage').onchange=loadVoiceOptions;
+  $('#vGender').onchange=loadVoiceOptions;
+  await loadVoiceOptions();
+
+  $('#voiceForm').onsubmit=async e=>{
+    e.preventDefault();
+    const btn=$('#vGenBtn');
+    const text=$('#vText').value.trim();
+    if(!text){ toast('يرجى كتابة نص للتحويل',false); return; }
+    btn.disabled=true; btn.textContent='⏳ جاري التوليد...';
+    const fd=Object.fromEntries(new FormData(e.target));
+    const voiceOpt=$('#vVoice').selectedOptions[0];
+    if(voiceOpt){ fd.voiceName = voiceOpt.dataset.name; }
+    if(!fd.voiceId){ delete fd.voiceId; delete fd.voiceName; }
+    $('#vResult').innerHTML='<div class="empty">جاري توليد الصوت، قد يستغرق الأمر بضع ثوانٍ...</div>';
+    try{
+      const d=await api('/api/voice/generate',{method:'POST',body:JSON.stringify(fd)});
+      renderVoiceResult(d.audio);
+      toast('تم توليد التعليق الصوتي بنجاح');
+      loadVoiceHistory();
+    }catch(err){
+      $('#vResult').innerHTML=`<div class="empty">${safe(err.message)}</div>`;
+      toast(err.message,false);
+    }finally{ btn.disabled=false; btn.textContent='🔊 توليد الصوت'; }
+  };
+
+  loadVoiceHistory();
+}
+
+function renderVoiceResult(audio){
+  const el=$('#vResult'); if(!el || !audio) return;
+  const snippet = audio.text.length>220 ? audio.text.slice(0,220)+'…' : audio.text;
+  el.innerHTML=`
+    <div class="audio-card">
+      <div class="audio-meta">
+        <span class="pill">${safe(voiceProviderNames[audio.provider]||audio.provider)}</span>
+        <span class="pill">${safe(voiceLanguageNames[audio.language]||audio.language)}</span>
+        <span class="pill">${safe(voiceGenderNames[audio.gender]||audio.gender)}</span>
+        <span class="muted mini">${safe(audio.voiceName||audio.voiceId)}</span>
+      </div>
+      <audio class="audio-player" controls preload="metadata" src="${safe(audio.url)}"></audio>
+      <p class="muted mini">${safe(snippet)}</p>
+      <div class="actions">
+        <a class="primary" href="${safe(audio.url)}" download="voice-${safe(audio.id)}.mp3">⬇ تحميل MP3</a>
+      </div>
+    </div>`;
+}
+
+async function loadVoiceHistory(){
+  const el=$('#vHistory'); if(!el) return;
+  el.innerHTML='<div class="empty">جاري التحميل...</div>';
+  try{
+    const d=await api('/api/voice/history?pageSize=20');
+    el.innerHTML = d.jobs.length ? d.jobs.map(j=>{
+      const snippet = j.text.length>140 ? j.text.slice(0,140)+'…' : j.text;
+      return `<div class="card audio-card">
+        <div class="audio-meta">
+          <span class="pill">${safe(voiceProviderNames[j.provider]||j.provider)}</span>
+          <span class="pill">${safe(voiceLanguageNames[j.language]||j.language)}</span>
+          <span class="pill">${safe(voiceGenderNames[j.gender]||j.gender)}</span>
+          <span class="pill ${j.status}">${voiceStatusAr[j.status]||j.status}</span>
+        </div>
+        <p class="muted mini">${safe(snippet)}</p>
+        <p class="muted mini">${safe(j.voiceName||j.voiceId)} — ${fmtDate(j.createdAt)}</p>
+        ${j.audio ? `<audio class="audio-player" controls preload="none" src="${safe(j.audio.url)}"></audio>
+          <div class="actions"><a class="ghost" href="${safe(j.audio.url)}" download="voice-${safe(j.audio.id)}.mp3">⬇ تحميل</a><button class="ghost danger" data-del-voice="${j.id}">حذف</button></div>`
+        : j.status==='failed' ? `<p class="muted mini">⚠️ ${safe(j.errorMessage||'فشل التوليد')}</p><div class="actions"><button class="ghost danger" data-del-voice="${j.id}">حذف</button></div>`
+        : `<div class="actions"><button class="ghost danger" data-del-voice="${j.id}">حذف</button></div>`}
+      </div>`;
+    }).join('') : '<div class="empty">لا يوجد سجل أصوات بعد. ابدأ بتوليد أول تعليق صوتي.</div>';
+    $$('[data-del-voice]').forEach(b=>b.onclick=async()=>{
+      if(!confirm('حذف هذا التسجيل من السجل؟'))return;
+      try{ await api('/api/voice/'+b.dataset.delVoice,{method:'DELETE'}); toast('تم الحذف'); loadVoiceHistory(); }
+      catch(e){ toast(e.message,false); }
+    });
+  }catch(e){ el.innerHTML=`<div class="empty">${safe(e.message)}</div>`; }
+}
 async function billingPage(){ if(!requireLogin())return; pageWrap('billing',`<div class="grid grid-2"><div class="card"><h2>اشتراكك الحالي</h2><div class="kv"><b>الخطة</b><span>${plans[state.user.plan]}</span><b>الحالة</b><span>${safe(state.user.subscriptionStatus)}</span><b>ينتهي في</b><span>${fmtDate(state.user.planExpiresAt)}</span><b>ملاحظة</b><span>${safe(state.user.subscriptionNote||'—')}</span></div></div><div class="card"><h2>رفع سند دفع</h2><form class="form" id="payForm"><select name="plan" class="input"><option value="pro">Pro</option><option value="business">Business</option></select><input class="input" name="amount" type="number" step="0.01" placeholder="المبلغ" required><select name="currency" class="input"><option value="YER">YER</option><option value="SAR">SAR</option><option value="USD">USD</option></select><select name="paymentMethod" class="input"><option>كريمي</option><option>جوالي</option><option>ون كاش</option><option>تحويل بنكي</option></select><input class="input" name="transactionNumber" placeholder="رقم العملية"><input class="input" name="requestedDays" type="number" value="30"><textarea name="note" placeholder="ملاحظة اختيارية"></textarea><input class="input" name="receipt" type="file" accept="image/*,application/pdf" required><button class="primary">إرسال طلب الدفع</button></form></div><div class="card" style="grid-column:1/-1"><h2>طلبات الدفع</h2><div id="myPayments"></div></div></div>`); $('#payForm').onsubmit=async e=>{e.preventDefault(); const fd=new FormData(e.target); try{await api('/api/payments/submit',{method:'POST',body:fd,headers:{}});toast('تم إرسال طلب الدفع للمراجعة');billingPage();}catch(err){toast(err.message,false)}}; loadMyPayments(); }
 async function loadMyPayments(){ try{ const d=await api('/api/payments/my'); $('#myPayments').innerHTML=d.payments.length?`<div class="table-wrap"><table class="table"><tr><th>الخطة</th><th>المبلغ</th><th>الطريقة</th><th>الحالة</th><th>السند</th><th>التاريخ</th></tr>${d.payments.map(p=>`<tr><td>${plans[p.plan]}</td><td>${p.amount} ${p.currency}</td><td>${safe(p.paymentMethod)}</td><td><span class="pill ${p.status.toLowerCase()}">${p.status}</span></td><td><a class="ghost" target="_blank" href="${safe(p.receiptImage)}">فتح</a></td><td>${fmtDate(p.createdAt)}</td></tr>`).join('')}</table></div>`:`<div class="empty">لا توجد طلبات دفع.</div>`; }catch(e){toast(e.message,false)} }
 async function filesPage(){ if(!requireLogin())return; pageWrap('files',`<div class="grid"><div class="card"><h2>ملفاتي</h2><form class="form grid grid-3" id="fileForm"><input class="input" name="file" type="file" required><input class="input" name="purpose" placeholder="الغرض: عام / مشروع"><button class="primary">رفع</button></form></div><div id="filesList" class="grid grid-3"></div></div>`); $('#fileForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/uploads/media',{method:'POST',body:new FormData(e.target),headers:{}});toast('تم الرفع');filesPage();}catch(err){toast(err.message,false)}}; try{const d=await api('/api/uploads/my'); $('#filesList').innerHTML=d.assets.length?d.assets.map(a=>`<div class="card preview"><h3>${safe(a.originalName)}</h3><p class="muted">${safe(a.mimeType)} — ${Math.round(a.size/1024)} KB</p>${a.mimeType.startsWith('image/')?`<img src="${safe(a.url)}">`:a.mimeType.startsWith('video/')?`<video src="${safe(a.url)}" controls></video>`:`<a class="ghost" target="_blank" href="${safe(a.url)}">فتح الملف</a>`}<a class="primary" target="_blank" href="${safe(a.url)}">عرض / تحميل</a></div>`).join(''):`<div class="empty">لا توجد ملفات.</div>`;}catch(e){toast(e.message,false)} }
@@ -66,7 +194,7 @@ function bindAdminUsers(){ $$('[data-sub]').forEach(b=>b.onclick=async()=>{const
 function bindAdminPayments(){ $$('[data-approve]').forEach(b=>b.onclick=async()=>{try{await api(`/api/payments/admin/${b.dataset.approve}/approve`,{method:'POST',body:JSON.stringify({adminNote:'تمت الموافقة من لوحة الأدمن'})});toast('تم قبول الدفع وتفعيل الاشتراك');renderAdmin('payments');}catch(e){toast(e.message,false)}}); $$('[data-reject]').forEach(b=>b.onclick=async()=>{const adminNote=prompt('سبب الرفض','السند غير واضح')||'تم الرفض'; try{await api(`/api/payments/admin/${b.dataset.reject}/reject`,{method:'POST',body:JSON.stringify({adminNote})});toast('تم رفض الطلب');renderAdmin('payments');}catch(e){toast(e.message,false)}}); }
 function resetPasswordPage(token){ shell(`<main class="auth-wrap"><div class="card auth-card"><h2>تعيين كلمة مرور جديدة</h2><form class="form" id="resetForm"><input type="hidden" name="token" value="${safe(token||'')}"><div class="field"><label>كلمة المرور الجديدة</label><input class="input" name="password" type="password" minlength="8" required></div><button class="primary">تغيير كلمة المرور</button></form></div></main>`); $('#resetForm').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/auth/reset-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))}); state.token=d.token; localStorage.setItem('sp_token',d.token); await loadMe(); toast(d.message||'تم تغيير كلمة المرور'); setPage('dashboard');}catch(err){toast(err.message,false)}}; }
 async function verifyEmailPage(token){ shell(`<main class="auth-wrap"><div class="card auth-card"><h2>تفعيل البريد الإلكتروني</h2><p class="muted">جاري التحقق من الرابط...</p></div></main>`); try{const d=await api('/api/auth/verify-email',{method:'POST',body:JSON.stringify({token})}); state.token=d.token; localStorage.setItem('sp_token',d.token); await loadMe(); toast(d.message||'تم التفعيل'); setPage('dashboard');}catch(e){toast(e.message,false); setPage('auth')} }
-async function render(){ const url=new URL(location.href); const resetToken=url.searchParams.get('resetToken')||url.searchParams.get('token'); const verifyToken=url.searchParams.get('verifyToken'); const hash=location.hash.replace('#','')||'home'; if(resetToken && (hash==='home' || location.pathname.includes('reset-password'))) return resetPasswordPage(resetToken); if(verifyToken && (hash==='home' || location.pathname.includes('verify-email'))) return verifyEmailPage(verifyToken); if(hash==='reset-password') return resetPasswordPage(resetToken); if(hash==='verify-email') return verifyEmailPage(verifyToken||resetToken); await loadMe(); const p=hash; if(p==='home')return home(); if(p==='plans')return plansPage(); if(p==='auth')return authPage(); if(p==='dashboard')return dashboard(); if(p==='templates')return templatesPage(); if(p==='projects')return projectsPage(); if(p==='ai')return aiPage(); if(p==='scripts')return scriptsPage(); if(p==='billing')return billingPage(); if(p==='files')return filesPage(); if(p==='admin')return adminPage(); home(); }
+async function render(){ const url=new URL(location.href); const resetToken=url.searchParams.get('resetToken')||url.searchParams.get('token'); const verifyToken=url.searchParams.get('verifyToken'); const hash=location.hash.replace('#','')||'home'; if(resetToken && (hash==='home' || location.pathname.includes('reset-password'))) return resetPasswordPage(resetToken); if(verifyToken && (hash==='home' || location.pathname.includes('verify-email'))) return verifyEmailPage(verifyToken); if(hash==='reset-password') return resetPasswordPage(resetToken); if(hash==='verify-email') return verifyEmailPage(verifyToken||resetToken); await loadMe(); const p=hash; if(p==='home')return home(); if(p==='plans')return plansPage(); if(p==='auth')return authPage(); if(p==='dashboard')return dashboard(); if(p==='templates')return templatesPage(); if(p==='projects')return projectsPage(); if(p==='ai')return aiPage(); if(p==='voice')return voiceStudioPage(); if(p==='scripts')return scriptsPage(); if(p==='billing')return billingPage(); if(p==='files')return filesPage(); if(p==='admin')return adminPage(); home(); }
 
 async function templatesPage() {
   if (!requireLogin()) return;

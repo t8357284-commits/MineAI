@@ -623,3 +623,82 @@ docker-compose exec app npx prisma db push --schema=./prisma/schema.prisma
 - روابط البريد الحالية تستخدم `?resetToken=` و `?verifyToken=` وهي مدعومة من الواجهة.
 - أول مستخدم يتم تسجيله يصبح Admin تلقائياً حسب منطق الباكند.
 - لا تحتاج `npm run build` للواجهة لأنها Static جاهزة.
+
+---
+
+## ✅ تحديث جديد — استوديو التعليق الصوتي AI Voice Over Studio
+
+تمت إضافة وحدة كاملة لتوليد التعليق الصوتي بالذكاء الاصطناعي باستخدام مزودين:
+
+- **ElevenLabs** — صوت متعدد اللغات (`eleven_multilingual_v2`) يدعم العربية والإنجليزية.
+- **PlayHT** — توليد صوت عبر `PlayHT2.0` بصيغة MP3.
+
+### الميزات
+- توليد تعليق صوتي من نص السكريبت.
+- أصوات عربية وإنجليزية، ذكر وأنثى.
+- تحميل الملف الناتج بصيغة MP3.
+- معاينة الصوت داخل المتصفح قبل التحميل.
+- سجل كامل لكل عمليات التوليد (ناجحة، فاشلة، قيد المعالجة).
+
+### نماذج Prisma الجديدة
+- `VoiceJob` — يمثل طلب التوليد (المزود، الصوت، اللغة، الجنس، النص، الحالة).
+- `GeneratedAudio` — يمثل الملف الصوتي الناتج (الرابط، الصيغة، الحجم) ومرتبط بـ `VoiceJob` عبر علاقة 1:1.
+
+### مسارات API الجديدة
+
+| Method | Endpoint | الوصف |
+|--------|----------|-------|
+| GET | `/api/voice/voices` | عرض قائمة الأصوات المتاحة (يمكن تصفيتها بـ `provider` و`language` و`gender`) |
+| POST | `/api/voice/generate` | توليد تعليق صوتي جديد من نص |
+| GET | `/api/voice/history` | عرض سجل التوليد للمستخدم (مع ترقيم صفحات) |
+| GET | `/api/voice/:id` | عرض تفاصيل مهمة توليد محددة |
+| DELETE | `/api/voice/:id` | حذف مهمة توليد من السجل |
+
+### إعداد مفاتيح المزودين
+
+أضف القيم التالية إلى `.env`:
+
+```env
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+PLAYHT_API_KEY=your_playht_api_key
+PLAYHT_USER_ID=your_playht_user_id
+```
+
+> إذا لم يتم ضبط مفاتيح أحد المزودين، يبقى النظام يعمل، وسيتم رفض طلبات التوليد لذلك المزود فقط برسالة `503` واضحة، بينما يبقى المزود الآخر يعمل بشكل طبيعي.
+
+### كتالوج الأصوات
+قائمة الأصوات (Voice IDs) لكل مزود/لغة/جنس موجودة في `backend/config/voices.js`. يمكنك استبدال أي `voiceId` بصوت مستنسخ (Cloned Voice) أو صوت مميز من حسابك الخاص في ElevenLabs أو PlayHT دون الحاجة لتعديل أي مسار API أو واجهة.
+
+### تخزين الملفات الصوتية
+يتم رفع ملفات MP3 الناتجة باستخدام نفس آلية التخزين المستخدمة للملفات الأخرى (`backend/utils/storage.js`):
+- تُحفظ على Cloudinary تلقائياً إذا كانت مفاتيحه مضبوطة (`resource_type: video`، وهو ما يستخدمه Cloudinary للملفات الصوتية).
+- وإلا تُحفظ محلياً داخل `uploads/voice-overs`.
+
+### الواجهة الأمامية
+صفحة جديدة في القائمة الجانبية: **استوديو التعليق الصوتي**، وتشمل:
+- نموذج لاختيار المزود، اللغة، الجنس، الصوت، وكتابة النص.
+- مشغّل صوت لمعاينة النتيجة فوراً.
+- زر تحميل MP3.
+- سجل كامل لكل الأصوات المولّدة مع إمكانية الحذف.
+
+### بعد تشغيل هذه النسخة
+
+نفّذ:
+
+```bash
+cd backend
+npm install
+npx prisma generate --schema=./prisma/schema.prisma
+npx prisma db push --schema=./prisma/schema.prisma
+npm start
+```
+
+أو عبر Docker:
+
+```bash
+docker-compose build --no-cache app
+docker-compose up -d
+docker-compose exec app npx prisma generate --schema=./prisma/schema.prisma
+docker-compose exec app npx prisma db push --schema=./prisma/schema.prisma
+```
+

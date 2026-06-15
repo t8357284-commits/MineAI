@@ -25,6 +25,7 @@ const adminRoutes = require('./routes/admin');
 const paymentsRoutes = require('./routes/payments');
 const uploadsRoutes = require('./routes/uploads');
 const templatesRoutes = require('./routes/templates');
+const voiceRoutes = require('./routes/voice');
  
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -104,6 +105,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/templates', templatesRoutes);
+app.use('/api/voice', voiceRoutes);
  
 // ─── SPA Fallback ──────────────────────────────────────────
 app.get('*', (req, res) => {

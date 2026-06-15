@@ -30,6 +30,28 @@ enum PaymentStatus {
   REJECTED
 }
 
+enum VoiceProvider {
+  elevenlabs
+  playht
+}
+
+enum VoiceLanguage {
+  ar
+  en
+}
+
+enum VoiceGender {
+  male
+  female
+}
+
+enum VoiceJobStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
 model User {
   id           String   @id @default(uuid())
   name         String
@@ -56,6 +78,8 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   auditLogs AuditLog[] @relation("ActorAuditLogs")
   favoriteTemplates FavoriteTemplate[]
+  voiceJobs VoiceJob[]
+  generatedAudios GeneratedAudio[]
 
   @@index([email])
 }
@@ -228,4 +252,52 @@ model FavoriteTemplate {
   @@unique([userId, templateId])
   @@index([userId])
   @@index([templateId])
+}
+
+model VoiceJob {
+  id           String          @id @default(uuid())
+  userId       String
+  provider     VoiceProvider
+  voiceId      String
+  voiceName    String          @default("")
+  language     VoiceLanguage
+  gender       VoiceGender
+  text         String
+  status       VoiceJobStatus  @default(pending)
+  errorMessage String          @default("")
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  audio GeneratedAudio?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model GeneratedAudio {
+  id              String        @id @default(uuid())
+  userId          String
+  voiceJobId      String        @unique
+  provider        VoiceProvider
+  voiceId         String
+  voiceName       String        @default("")
+  language        VoiceLanguage
+  gender          VoiceGender
+  text            String
+  url             String
+  storageProvider String        @default("local")
+  publicId        String        @default("")
+  format          String        @default("mp3")
+  size            Int           @default(0)
+  durationSec     Float?
+  createdAt       DateTime      @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voiceJob VoiceJob @relation(fields: [voiceJobId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([provider])
 }

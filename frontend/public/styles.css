@@ -31,3 +31,12 @@
 .preview-image { width: 100%; border-radius: 16px; border: 1px solid var(--line); }
 .tag-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .tag { font-size: 12px; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; color: var(--muted); }
+
+/* Voice Over Studio */
+.audio-card { display: grid; gap: 10px; }
+.audio-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.audio-player { width: 100%; height: 42px; border-radius: 12px; }
+.audio-player::-webkit-media-controls-panel { background-color: var(--panel2); }
+.pill.processing,.pill.pending { background: rgba(245,158,11,.12); color: #fde68a; border-color: rgba(245,158,11,.35); }
+.pill.completed { background: rgba(34,197,94,.12); color: #bbf7d0; border-color: rgba(34,197,94,.35); }
+.pill.failed { background: rgba(239,68,68,.12); color: #fecaca; border-color: rgba(239,68,68,.35); }

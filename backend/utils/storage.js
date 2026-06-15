@@ -23,17 +23,21 @@ function getCloudinary() {
 
 function safeExt(originalName = '', mimeType = '') {
   const ext = path.extname(originalName).toLowerCase();
-  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.mp4', '.mov'];
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.mp4', '.mov', '.mp3', '.wav'];
   if (allowed.includes(ext)) return ext;
   if (mimeType === 'application/pdf') return '.pdf';
   if (mimeType === 'image/png') return '.png';
   if (mimeType === 'image/webp') return '.webp';
   if (mimeType === 'video/mp4') return '.mp4';
+  if (mimeType === 'audio/mpeg') return '.mp3';
+  if (mimeType === 'audio/wav') return '.wav';
   return '.jpg';
 }
 
 function resourceType(mimetype = '') {
   if (mimetype.startsWith('video/')) return 'video';
+  // Cloudinary stores audio files under the "video" resource type.
+  if (mimetype.startsWith('audio/')) return 'video';
   if (mimetype === 'application/pdf') return 'raw';
   return 'image';
 }
